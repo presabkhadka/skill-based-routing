@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RequestStatus {
+  PENDING
+  ASSIGNED
+  UNASSIGNED
+  COMPLETED
+}
+
+model Skill {
+  id                Int               @id @default(autoincrement())
+  name              String            @unique
+  technicianSkills  TechnicianSkill[]
+  requiredSkills    RequiredSkill[]
+  createdAt         DateTime          @default(now())
+}
+
+model Technician {
+  id          Int               @id @default(autoincrement())
+  name        String
+  available   Boolean           @default(true)
+  workingHours Json?
+  createdAt   DateTime          @default(now())
+  skills      TechnicianSkill[]
+  assignments ServiceRequest[]  @relation("TechnicianAssignments")
+  traces      AssignmentTrace[]
+}
+
+model TechnicianSkill {
+  id           Int        @id @default(autoincrement())
+  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  technicianId Int
+  skill        Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skillId      Int
+  level        Int
+
+  @@unique([technicianId, skillId])
+}
+
+model ServiceRequest {
+  id                   Int               @id @default(autoincrement())
+  customer             String
+  priority             Priority          @default(MEDIUM)
+  status               RequestStatus     @default(PENDING)
+  scheduledDay         Int?
+  scheduledTime        String?
+  assignedTechnician   Technician?       @relation("TechnicianAssignments", fields: [assignedTechnicianId], references: [id], onDelete: SetNull)
+  assignedTechnicianId Int?
+  requiredSkills       RequiredSkill[]
+  traces               AssignmentTrace[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+}
+
+model RequiredSkill {
+  id               Int            @id @default(autoincrement())
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  serviceRequestId Int
+  skill            Skill          @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skillId          Int
+  minLevel         Int
+
+  @@unique([serviceRequestId, skillId])
+}
+
+model AssignmentTrace {
+  id               Int            @id @default(autoincrement())
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  serviceRequestId Int
+  technician       Technician     @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  technicianId     Int
+  eligible         Boolean
+  reason           String
+  rejectReason     String?
+  workload         Int
+  createdAt        DateTime       @default(now())
+}
