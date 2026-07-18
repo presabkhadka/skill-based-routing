@@ -1,0 +1,540 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/skills": {
+      "get": {
+        "operationId": "SkillsController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "operationId": "SkillsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSkillDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/offered": {
+      "get": {
+        "operationId": "SkillsController_offeredSkills",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/technicians": {
+      "get": {
+        "operationId": "TechniciansController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      },
+      "post": {
+        "operationId": "TechniciansController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTechnicianDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      }
+    },
+    "/technicians/{id}": {
+      "get": {
+        "operationId": "TechniciansController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      },
+      "patch": {
+        "operationId": "TechniciansController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTechnicianDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      }
+    },
+    "/technicians/{id}/skills": {
+      "put": {
+        "operationId": "TechniciansController_setSkills",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSkillsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      }
+    },
+    "/technicians/{id}/availability": {
+      "patch": {
+        "operationId": "TechniciansController_setAvailability",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAvailabilityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "technicians"
+        ]
+      }
+    },
+    "/service-requests": {
+      "get": {
+        "operationId": "ServiceRequestsController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-requests"
+        ]
+      },
+      "post": {
+        "operationId": "ServiceRequestsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-requests"
+        ]
+      }
+    },
+    "/service-requests/{id}": {
+      "get": {
+        "operationId": "ServiceRequestsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-requests"
+        ]
+      }
+    },
+    "/service-requests/{id}/route": {
+      "post": {
+        "operationId": "ServiceRequestsController_route",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-requests"
+        ]
+      }
+    },
+    "/service-requests/{id}/complete": {
+      "patch": {
+        "operationId": "ServiceRequestsController_complete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-requests"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Skill-Based Routing API",
+    "description": "Matches service requests to qualified, available technicians by skill, level, availability, and workload.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "CreateSkillDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CreateTechnicianDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "available": {
+            "type": "boolean",
+            "default": true
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "exclusiveMinimum": false,
+                  "maximum": 5,
+                  "exclusiveMaximum": false
+                }
+              },
+              "required": [
+                "skill",
+                "level"
+              ]
+            },
+            "default": []
+          },
+          "workingHours": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "exclusiveMinimum": false,
+                  "maximum": 6,
+                  "exclusiveMaximum": false
+                },
+                "start": {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                }
+              },
+              "required": [
+                "day",
+                "start",
+                "end"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateTechnicianDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "workingHours": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "exclusiveMinimum": false,
+                  "maximum": 6,
+                  "exclusiveMaximum": false
+                },
+                "start": {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                }
+              },
+              "required": [
+                "day",
+                "start",
+                "end"
+              ]
+            }
+          }
+        }
+      },
+      "SetSkillsDto": {
+        "type": "object",
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "exclusiveMinimum": false,
+                  "maximum": 5,
+                  "exclusiveMaximum": false
+                }
+              },
+              "required": [
+                "skill",
+                "level"
+              ]
+            }
+          }
+        },
+        "required": [
+          "skills"
+        ]
+      },
+      "SetAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
+      "CreateServiceRequestDto": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "default": "MEDIUM"
+          },
+          "requiredSkills": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1,
+              "exclusiveMinimum": false,
+              "maximum": 5,
+              "exclusiveMaximum": false
+            }
+          },
+          "scheduledDay": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": false,
+            "maximum": 6,
+            "exclusiveMaximum": false
+          },
+          "scheduledTime": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          }
+        },
+        "required": [
+          "customer",
+          "requiredSkills"
+        ]
+      }
+    }
+  }
+}
