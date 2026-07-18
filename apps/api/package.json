@@ -1,0 +1,56 @@
+{
+  "name": "@skill-routing/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:shared": "pnpm --filter @skill-routing/shared build",
+    "prebuild": "pnpm run build:shared",
+    "build": "nest build",
+    "prestart:dev": "pnpm run build:shared",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "pretypecheck": "pnpm run build:shared",
+    "start:prod": "node dist/apps/api/src/main.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "seed": "ts-node prisma/seed.ts",
+    "openapi": "ts-node scripts/export-openapi.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@prisma/client": "^6.3.0",
+    "@skill-routing/shared": "workspace:*",
+    "nestjs-zod": "^4.3.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "prisma": "^6.3.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
+  }
+}

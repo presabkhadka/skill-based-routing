@@ -1,0 +1,27 @@
+{
+  "name": "skill-routing",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "@scarf/scarf",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "dev:api": "pnpm --filter @skill-routing/api start:dev",
+    "dev:web": "pnpm --filter @skill-routing/web dev",
+    "seed": "pnpm --filter @skill-routing/api seed",
+    "migrate": "pnpm --filter @skill-routing/api prisma:migrate",
+    "test": "pnpm --filter @skill-routing/api test"
+  }
+}
