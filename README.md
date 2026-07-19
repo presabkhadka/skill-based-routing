@@ -56,7 +56,7 @@ For each technician, evaluated in strict short-circuit order:
 1. **Skill match** — must have *every* required skill, else `MISSING_SKILL`.
 2. **Minimum level** — level must meet/exceed each requirement, else `LEVEL_TOO_LOW`.
 3. **Availability** — must be available, else `UNAVAILABLE`.
-4. **Working hours** — must be within a working window at the current time, else `OUTSIDE_HOURS`.
+4. **Working hours** — if the request carries a scheduled day + time, the technician must be on shift then, else `OUTSIDE_HOURS`. An **untimed request skips this gate entirely** (there's no basis to filter by shift without a time).
 5. **Workload** — among the eligible, pick the **lowest** workload.
 
 ### Tie-breaker (documented)
@@ -108,11 +108,13 @@ Request `HVAC ≥ 4, Electrical ≥ 3` against the seeded technicians:
   or leaves them unassigned. See `RoutingService.reassignFor()`.
 - **Working hours (shifts).** Each technician can carry a weekly schedule
   (`[{ day, start, end }]`, empty = always on). It's an extra eligibility gate
-  *after* the manual availability toggle: a technician outside their shift at
-  routing time is rejected with a specific reason (e.g. *“Outside working hours
-  (now Sat 04:47; shift 09:00–17:00)”*). To keep the engine pure, the current
-  time is **passed into** `routeRequest` (never read inside), so shift logic
-  stays fully deterministic and unit-testable. Single (server) timezone.
+  *after* the manual availability toggle: a technician outside their shift is
+  rejected with a specific reason (e.g. *“Outside working hours (Mon 08:00 is
+  outside shift 09:00–17:00)”*, or *“Outside working hours (no shift on Sat)”*).
+  The evaluation time comes from the **request's** `scheduledDay`/`scheduledTime`
+  and is **passed into** `routeRequest` (never read inside), so the engine stays
+  pure and the shift logic is fully deterministic and unit-testable. A request
+  with no schedule skips the gate. Single (server) timezone.
 - **Single source of truth for the contract.** All request/skill DTOs are Zod
   schemas in `packages/shared`, reused by the API's validation pipe (via
   `nestjs-zod`) and the React forms.
