@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { api, type Priority, type ServiceRequestDetail } from "@/api";
-import { WEEKDAY_CHIPS, dayLabel } from "@/components/working-hours";
-import { cn } from "@/lib/utils";
+import { DAYS, DayChip, dayLabel } from "@/components/working-hours";
+import { toastRoutingOutcome } from "@/lib/routing-toast";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,6 +44,7 @@ export function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
   const onSuccess = (r: ServiceRequestDetail) => {
     qc.invalidateQueries({ queryKey: ["requests"] });
     qc.invalidateQueries({ queryKey: ["technicians"] });
+    toastRoutingOutcome(r);
     onCreated(r.id);
   };
 
@@ -63,12 +64,11 @@ export function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
   const setSkill = (i: number, patch: Partial<SkillRow>) =>
     setSkills((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)));
 
-  const optionsFor = (i: number) => {
-    const takenElsewhere = new Set(
-      skills.filter((_, j) => j !== i).map((s) => s.skill),
-    );
-    return offeredSkills.filter((o) => !takenElsewhere.has(o.name));
-  };
+  // A skill picked in one row is hidden from the others. Built once per
+  // render rather than per row; each row re-admits its own current pick.
+  const taken = new Set(skills.map((s) => s.skill));
+  const optionsFor = (row: SkillRow) =>
+    offeredSkills.filter((o) => !taken.has(o.name) || o.name === row.skill);
 
   const chosen = skills.filter((s) => s.skill);
   const allOfferedUsed = chosen.length >= offeredSkills.length;
@@ -116,22 +116,15 @@ export function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
         <div className="space-y-2">
           <Label>Scheduled for (optional)</Label>
           <div className="flex flex-wrap gap-1.5">
-            {WEEKDAY_CHIPS.map((d) => (
-              <button
+            {DAYS.map((d) => (
+              <DayChip
                 key={d.i}
-                type="button"
+                label={d.label}
+                selected={scheduledDay === d.i}
                 onClick={() =>
                   setScheduledDay(scheduledDay === d.i ? null : d.i)
                 }
-                className={cn(
-                  "h-8 w-11 rounded-md border text-xs font-medium transition-colors",
-                  scheduledDay === d.i
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-muted",
-                )}
-              >
-                {d.label}
-              </button>
+              />
             ))}
           </div>
           <div className="flex items-center gap-2">
@@ -172,7 +165,7 @@ export function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
                       <SelectValue placeholder="Select a skill" />
                     </SelectTrigger>
                     <SelectContent>
-                      {optionsFor(i).map((o) => (
+                      {optionsFor(s).map((o) => (
                         <SelectItem key={o.id} value={o.name}>
                           {o.name}
                         </SelectItem>
@@ -225,7 +218,7 @@ export function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
               </div>
               {create.isError && (
                 <p className="text-sm text-destructive">
-                  {(create.error as Error).message}
+                  {create.error.message}
                 </p>
               )}
             </>

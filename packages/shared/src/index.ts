@@ -23,10 +23,17 @@ export const PRIORITY_WEIGHT: Record<Priority, number> = {
   LOW: 1,
 };
 
+/**
+ * UNASSIGNED and QUEUED both mean "nobody is on it", but they call for
+ * opposite responses: UNASSIGNED means no technician can *ever* do this work
+ * as the workforce stands, while QUEUED means qualified technicians exist and
+ * are merely full, so it resolves itself as soon as capacity frees up.
+ */
 export const RequestStatus = {
   PENDING: "PENDING",
   ASSIGNED: "ASSIGNED",
   UNASSIGNED: "UNASSIGNED",
+  QUEUED: "QUEUED",
   COMPLETED: "COMPLETED",
 } as const;
 export type RequestStatus =
@@ -35,8 +42,13 @@ export const requestStatusSchema = z.enum([
   "PENDING",
   "ASSIGNED",
   "UNASSIGNED",
+  "QUEUED",
   "COMPLETED",
 ]);
+
+/** Assignments a technician can hold at once before routing skips them. */
+export const DEFAULT_MAX_WORKLOAD = 5;
+export const maxWorkloadSchema = z.number().int().min(1).max(100);
 
 
 export const createSkillSchema = z.object({
@@ -106,6 +118,7 @@ export function isWithinWorkingHours(
 export const createTechnicianSchema = z.object({
   name: z.string().trim().min(1).max(120),
   available: z.boolean().optional().default(true),
+  maxWorkload: maxWorkloadSchema.optional().default(DEFAULT_MAX_WORKLOAD),
   skills: z.array(technicianSkillSchema).default([]),
   workingHours: workingHoursSchema.optional().default([]),
 });
@@ -114,6 +127,7 @@ export type CreateTechnicianDto = z.infer<typeof createTechnicianSchema>;
 export const updateTechnicianSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   available: z.boolean().optional(),
+  maxWorkload: maxWorkloadSchema.optional(),
   workingHours: workingHoursSchema.optional(),
 });
 export type UpdateTechnicianDto = z.infer<typeof updateTechnicianSchema>;
@@ -163,13 +177,16 @@ export interface EngineTechnician {
   workload: number;
   skills: Record<string, number>;
   workingHours?: WorkingWindow[];
+  /** Omitted means uncapped — capacity is opt-in for the pure engine. */
+  maxWorkload?: number;
 }
 
 export type RejectReason =
   | "MISSING_SKILL"
   | "LEVEL_TOO_LOW"
   | "UNAVAILABLE"
-  | "OUTSIDE_HOURS";
+  | "OUTSIDE_HOURS"
+  | "AT_CAPACITY";
 
 export interface CandidateEvaluation {
   technicianId: number;
@@ -186,4 +203,10 @@ export interface RoutingResult {
   selectedBecause: string | null;
   eligibleTechnicianIds: number[];
   evaluations: CandidateEvaluation[];
+  /**
+   * True when nobody was assigned *purely* because every otherwise-qualified
+   * technician is full. Distinguishes "come back later" from "no one can do
+   * this at all", which is the difference between QUEUED and UNASSIGNED.
+   */
+  blockedByCapacity: boolean;
 }

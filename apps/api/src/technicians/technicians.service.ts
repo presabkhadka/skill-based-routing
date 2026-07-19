@@ -6,6 +6,7 @@ import type {
   EngineTechnician,
   WorkingWindow,
 } from "@skill-routing/shared";
+import { DEFAULT_MAX_WORKLOAD } from "@skill-routing/shared";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { SkillsService } from "../skills/skills.service";
@@ -14,6 +15,7 @@ type TechnicianWithSkills = {
   id: number;
   name: string;
   available: boolean;
+  maxWorkload: number;
   workingHours: Prisma.JsonValue | null;
   createdAt: Date;
   skills: { level: number; skill: { name: string } }[];
@@ -24,6 +26,7 @@ export interface TechnicianView {
   name: string;
   available: boolean;
   workload: number;
+  maxWorkload: number;
   skills: Record<string, number>;
   workingHours: WorkingWindow[];
   createdAt: Date;
@@ -36,10 +39,19 @@ export class TechniciansService {
     private readonly skills: SkillsService,
   ) {}
 
-  private async workloadMap(): Promise<Map<number, number>> {
+  /**
+   * Open assignments per technician. Pass `technicianId` to scope the
+   * aggregate to a single technician — `findOne` only ever reads one entry,
+   * and grouping the whole table to answer that gets steadily worse as
+   * request volume grows.
+   */
+  private async workloadMap(technicianId?: number): Promise<Map<number, number>> {
     const grouped = await this.prisma.serviceRequest.groupBy({
       by: ["assignedTechnicianId"],
-      where: { status: "ASSIGNED", assignedTechnicianId: { not: null } },
+      where: {
+        status: "ASSIGNED",
+        assignedTechnicianId: technicianId ?? { not: null },
+      },
       _count: { _all: true },
     });
     return new Map(
@@ -55,6 +67,7 @@ export class TechniciansService {
       name: t.name,
       available: t.available,
       workload,
+      maxWorkload: t.maxWorkload,
       skills: Object.fromEntries(t.skills.map((s) => [s.skill.name, s.level])),
       workingHours: (t.workingHours as WorkingWindow[] | null) ?? [],
       createdAt: t.createdAt,
@@ -73,12 +86,14 @@ export class TechniciansService {
   }
 
   async findOne(id: number): Promise<TechnicianView> {
-    const t = await this.prisma.technician.findUnique({
-      where: { id },
-      include: { skills: { include: { skill: true } } },
-    });
+    const [t, workloads] = await Promise.all([
+      this.prisma.technician.findUnique({
+        where: { id },
+        include: { skills: { include: { skill: true } } },
+      }),
+      this.workloadMap(id),
+    ]);
     if (!t) throw new NotFoundException(`Technician ${id} not found`);
-    const workloads = await this.workloadMap();
     return this.toView(t, workloads.get(id) ?? 0);
   }
 
@@ -90,6 +105,7 @@ export class TechniciansService {
       data: {
         name: dto.name,
         available: dto.available ?? true,
+        maxWorkload: dto.maxWorkload ?? DEFAULT_MAX_WORKLOAD,
         workingHours: dto.workingHours ?? [],
         skills: {
           create: this.dedupeSkills(dto.skills, skillIds),
@@ -118,6 +134,7 @@ export class TechniciansService {
       data: {
         name: dto.name,
         available: dto.available,
+        maxWorkload: dto.maxWorkload,
         ...(dto.workingHours !== undefined
           ? { workingHours: dto.workingHours }
           : {}),
@@ -164,6 +181,7 @@ export class TechniciansService {
       name: v.name,
       available: v.available,
       workload: v.workload,
+      maxWorkload: v.maxWorkload,
       skills: v.skills,
       workingHours: v.workingHours,
     }));

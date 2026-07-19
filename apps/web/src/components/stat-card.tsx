@@ -1,17 +1,26 @@
+import type { ReactNode } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+type Tone = "success" | "destructive" | "muted";
+
 export interface StatTile {
   label: string;
-  value: React.ReactNode;
+  value: ReactNode;
   sublabel?: string;
   delta?: {
     text: string;
-    tone: "success" | "destructive" | "muted";
+    tone: Tone;
     dir?: "up" | "down";
   };
 }
+
+const TONE_CLASSES: Record<Tone, string> = {
+  success: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+  destructive: "bg-destructive/12 text-destructive",
+  muted: "bg-muted text-muted-foreground",
+};
 
 export function StatRow({ tiles }: { tiles: StatTile[] }) {
   return (
@@ -26,11 +35,6 @@ export function StatRow({ tiles }: { tiles: StatTile[] }) {
 }
 
 function Tile({ label, value, sublabel, delta }: StatTile) {
-  const toneClasses: Record<string, string> = {
-    success: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
-    destructive: "bg-destructive/12 text-destructive",
-    muted: "bg-muted text-muted-foreground",
-  };
   const DirIcon = delta?.dir === "down" ? TrendingDown : TrendingUp;
   return (
     <div className="px-6 py-5">
@@ -43,7 +47,7 @@ function Tile({ label, value, sublabel, delta }: StatTile) {
           <span
             className={cn(
               "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-semibold",
-              toneClasses[delta.tone],
+              TONE_CLASSES[delta.tone],
             )}
           >
             {delta.dir && <DirIcon className="h-3 w-3" />}

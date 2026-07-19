@@ -9,6 +9,48 @@ import {
   type RoutingResult,
 } from "@skill-routing/shared";
 
+/**
+ * Case-insensitive view over one technician's skill map.
+ *
+ * Skill names arrive from three directions (seed data, the console, the alias
+ * normalizer) and their casing does not always agree, so every lookup has to be
+ * case-tolerant. Building the folded index once per technician keeps that
+ * tolerance O(1) per lookup instead of rescanning the key list every time.
+ */
+interface SkillLookup {
+  exact: Record<string, number>;
+  folded: Map<string, number>;
+}
+
+function buildSkillLookup(skills: Record<string, number>): SkillLookup {
+  const folded = new Map<string, number>();
+  for (const key of Object.keys(skills)) {
+    const normalized = key.trim().toLowerCase();
+    // First key wins, matching the original left-to-right scan.
+    if (!folded.has(normalized)) folded.set(normalized, skills[key]);
+  }
+  return { exact: skills, folded };
+}
+
+function skillLevel(
+  lookup: SkillLookup,
+  skillName: string,
+): number | undefined {
+  const direct = lookup.exact[skillName];
+  if (direct !== undefined) return direct;
+  return lookup.folded.get(skillName.trim().toLowerCase());
+}
+
+function summedProficiency(
+  lookup: SkillLookup,
+  requiredSkills: EngineRequiredSkill[],
+): number {
+  return requiredSkills.reduce(
+    (sum, req) => sum + (skillLevel(lookup, req.skillName) ?? 0),
+    0,
+  );
+}
+
 export function routeRequest(
   requiredSkills: EngineRequiredSkill[],
   technicians: EngineTechnician[],
@@ -21,22 +63,32 @@ export function routeRequest(
       selectedBecause: null,
       eligibleTechnicianIds: [],
       evaluations: [],
+      blockedByCapacity: false,
     };
   }
 
-  const evaluations: CandidateEvaluation[] = technicians.map((tech) =>
-    evaluateTechnician(tech, requiredSkills, now),
+  const lookups = technicians.map((tech) => buildSkillLookup(tech.skills));
+
+  const evaluations: CandidateEvaluation[] = technicians.map((tech, i) =>
+    evaluateTechnician(tech, lookups[i], requiredSkills, now),
   );
 
-  const eligible = technicians.filter(
-    (t) => evaluations.find((e) => e.technicianId === t.id)?.eligible,
-  );
+  // Walk technicians and evaluations in lockstep — they are index-aligned by
+  // construction — and bank each survivor's proficiency score while we are
+  // here, so the tiebreak comparator and the explanation never recompute it.
+  const eligible: EngineTechnician[] = [];
+  const proficiency = new Map<number, number>();
+  technicians.forEach((tech, i) => {
+    if (!evaluations[i].eligible) return;
+    eligible.push(tech);
+    proficiency.set(tech.id, summedProficiency(lookups[i], requiredSkills));
+  });
 
-  const winner = selectBest(eligible, requiredSkills);
+  const winner = selectBest(eligible, proficiency);
 
   let selectedBecause: string | null = null;
   if (winner) {
-    selectedBecause = explainSelection(winner, eligible, requiredSkills);
+    selectedBecause = explainSelection(winner, eligible, proficiency);
     const winnerEval = evaluations.find((e) => e.technicianId === winner.id);
     if (winnerEval) winnerEval.reason = selectedBecause;
   }
@@ -47,24 +99,41 @@ export function routeRequest(
     selectedBecause,
     eligibleTechnicianIds: eligible.map((t) => t.id),
     evaluations,
+    blockedByCapacity:
+      !winner && evaluations.some((e) => e.rejectReason === "AT_CAPACITY"),
   };
 }
 
-function skillLevel(
-  skills: Record<string, number>,
-  skillName: string,
-): number | undefined {
-  const direct = skills[skillName];
-  if (direct !== undefined) return direct;
-  const target = skillName.trim().toLowerCase();
-  for (const key of Object.keys(skills)) {
-    if (key.trim().toLowerCase() === target) return skills[key];
-  }
-  return undefined;
+/**
+ * Would this technician still be a valid assignee for these requirements?
+ *
+ * Used when a technician's skills or shift change, to tell an assignment that
+ * has gone stale from one that is still perfectly good. Routes through the
+ * same evaluator as `routeRequest`, so the two can never drift apart.
+ *
+ * Capacity is deliberately ignored: it gates taking on *new* work, and a
+ * technician already holding this request is itself part of the workload being
+ * measured. Enforcing it here would make a full technician fail every one of
+ * their own assignments and shed the lot.
+ */
+export function qualifies(
+  requiredSkills: EngineRequiredSkill[],
+  tech: EngineTechnician,
+  now?: EvaluationTime,
+): boolean {
+  if (requiredSkills.length === 0) return false;
+  const uncapped = { ...tech, maxWorkload: undefined };
+  return evaluateTechnician(
+    uncapped,
+    buildSkillLookup(uncapped.skills),
+    requiredSkills,
+    now,
+  ).eligible;
 }
 
 function evaluateTechnician(
   tech: EngineTechnician,
+  lookup: SkillLookup,
   requiredSkills: EngineRequiredSkill[],
   now?: EvaluationTime,
 ): CandidateEvaluation {
@@ -74,28 +143,31 @@ function evaluateTechnician(
     workload: tech.workload,
   };
 
-  const missing = requiredSkills.find(
-    (req) => skillLevel(tech.skills, req.skillName) === undefined,
-  );
-  if (missing) {
+  // Resolve every required skill once, then apply the rejection rules in
+  // priority order: a skill the technician simply does not have outranks one
+  // they hold at too low a level.
+  const levels = requiredSkills.map((req) => skillLevel(lookup, req.skillName));
+
+  const missingIndex = levels.indexOf(undefined);
+  if (missingIndex !== -1) {
     return {
       ...base,
       eligible: false,
       rejectReason: "MISSING_SKILL",
-      reason: `Missing required skill: ${missing.skillName}`,
+      reason: `Missing required skill: ${requiredSkills[missingIndex].skillName}`,
     };
   }
 
-  const tooLow = requiredSkills.find(
-    (req) => skillLevel(tech.skills, req.skillName)! < req.minLevel,
+  const tooLowIndex = levels.findIndex(
+    (level, i) => level! < requiredSkills[i].minLevel,
   );
-  if (tooLow) {
-    const have = skillLevel(tech.skills, tooLow.skillName);
+  if (tooLowIndex !== -1) {
+    const req = requiredSkills[tooLowIndex];
     return {
       ...base,
       eligible: false,
       rejectReason: "LEVEL_TOO_LOW",
-      reason: `${tooLow.skillName} level ${have} < required ${tooLow.minLevel}`,
+      reason: `${req.skillName} level ${levels[tooLowIndex]} < required ${req.minLevel}`,
     };
   }
 
@@ -117,6 +189,19 @@ function evaluateTechnician(
     };
   }
 
+  // Capacity is checked last on purpose: reaching this gate means the
+  // technician was qualified in every other respect, so an AT_CAPACITY reject
+  // reliably means "right person, no room" — which is what lets the caller
+  // tell a queued request apart from an unroutable one.
+  if (tech.maxWorkload !== undefined && tech.workload >= tech.maxWorkload) {
+    return {
+      ...base,
+      eligible: false,
+      rejectReason: "AT_CAPACITY",
+      reason: `At capacity (${tech.workload}/${tech.maxWorkload} assignments)`,
+    };
+  }
+
   return {
     ...base,
     eligible: true,
@@ -135,29 +220,32 @@ function describeOffShift(tech: EngineTechnician, at: EvaluationTime): string {
   return `Outside working hours (${dayName} ${timeStr} is outside shift ${shifts})`;
 }
 
-function summedProficiency(
-  tech: EngineTechnician,
-  requiredSkills: EngineRequiredSkill[],
+/**
+ * The documented tiebreak ladder: lowest workload, then highest total
+ * proficiency across the required skills, then lowest id as a deterministic
+ * final resort. Ids are unique, so this is a total order — the best element is
+ * unambiguous and a single pass finds it.
+ */
+function compareCandidates(
+  a: EngineTechnician,
+  b: EngineTechnician,
+  proficiency: Map<number, number>,
 ): number {
-  return requiredSkills.reduce(
-    (sum, req) => sum + (skillLevel(tech.skills, req.skillName) ?? 0),
-    0,
-  );
+  if (a.workload !== b.workload) return a.workload - b.workload;
+  const profDiff =
+    (proficiency.get(b.id) ?? 0) - (proficiency.get(a.id) ?? 0);
+  if (profDiff !== 0) return profDiff;
+  return a.id - b.id;
 }
 
 function selectBest(
   eligible: EngineTechnician[],
-  requiredSkills: EngineRequiredSkill[],
+  proficiency: Map<number, number>,
 ): EngineTechnician | null {
   if (eligible.length === 0) return null;
-  return [...eligible].sort((a, b) => {
-    if (a.workload !== b.workload) return a.workload - b.workload;
-    const profDiff =
-      summedProficiency(b, requiredSkills) -
-      summedProficiency(a, requiredSkills);
-    if (profDiff !== 0) return profDiff;
-    return a.id - b.id;
-  })[0];
+  return eligible.reduce((best, tech) =>
+    compareCandidates(tech, best, proficiency) < 0 ? tech : best,
+  );
 }
 
 function listNames(names: string[]): string {
@@ -169,7 +257,7 @@ function listNames(names: string[]): string {
 function explainSelection(
   winner: EngineTechnician,
   eligible: EngineTechnician[],
-  requiredSkills: EngineRequiredSkill[],
+  proficiency: Map<number, number>,
 ): string {
   if (eligible.length === 1) {
     return `Selected — the only eligible technician (workload ${winner.workload}).`;
@@ -182,13 +270,13 @@ function explainSelection(
     return `Selected — lowest workload (${winner.workload}) among ${eligible.length} eligible technicians.`;
   }
 
-  const winnerProf = summedProficiency(winner, requiredSkills);
+  const winnerProf = proficiency.get(winner.id) ?? 0;
   const tiedOnProf = tiedOnWorkload.filter(
-    (t) => summedProficiency(t, requiredSkills) === winnerProf,
+    (t) => (proficiency.get(t.id) ?? 0) === winnerProf,
   );
   if (tiedOnProf.length === 0) {
     const runnerUpProf = Math.max(
-      ...tiedOnWorkload.map((t) => summedProficiency(t, requiredSkills)),
+      ...tiedOnWorkload.map((t) => proficiency.get(t.id) ?? 0),
     );
     return `Selected — tied on lowest workload (${winner.workload}) with ${listNames(
       tiedOnWorkload.map((t) => t.name),

@@ -1,5 +1,13 @@
 import { Badge } from "@/components/ui/badge";
-import type { Priority, RequestStatus } from "@/api";
+import type { Priority, RejectReason, RequestStatus } from "@/api";
+
+export const REJECT_LABEL: Record<RejectReason, string> = {
+  MISSING_SKILL: "missing skill",
+  LEVEL_TOO_LOW: "level too low",
+  UNAVAILABLE: "unavailable",
+  OUTSIDE_HOURS: "off shift",
+  AT_CAPACITY: "at capacity",
+};
 
 const STATUS_VARIANT: Record<
   RequestStatus,
@@ -7,6 +15,7 @@ const STATUS_VARIANT: Record<
 > = {
   ASSIGNED: "success",
   UNASSIGNED: "destructive",
+  QUEUED: "warning",
   PENDING: "warning",
   COMPLETED: "secondary",
 };

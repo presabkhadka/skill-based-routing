@@ -348,6 +348,14 @@
             "type": "boolean",
             "default": true
           },
+          "maxWorkload": {
+            "type": "integer",
+            "minimum": 1,
+            "exclusiveMinimum": false,
+            "maximum": 100,
+            "exclusiveMaximum": false,
+            "default": 5
+          },
           "skills": {
             "type": "array",
             "items": {
@@ -417,6 +425,13 @@
           },
           "available": {
             "type": "boolean"
+          },
+          "maxWorkload": {
+            "type": "integer",
+            "minimum": 1,
+            "exclusiveMinimum": false,
+            "maximum": 100,
+            "exclusiveMaximum": false
           },
           "workingHours": {
             "type": "array",

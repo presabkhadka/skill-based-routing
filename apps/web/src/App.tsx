@@ -6,6 +6,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Technicians } from "@/pages/Technicians";
 import { Requests } from "@/pages/Requests";
 import { NewRequest } from "@/pages/NewRequest";
+import { Toaster } from "@/components/ui/sonner";
 
 export type View = "dashboard" | "technicians" | "requests" | "new";
 
@@ -73,6 +74,7 @@ export function App() {
           </div>
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }

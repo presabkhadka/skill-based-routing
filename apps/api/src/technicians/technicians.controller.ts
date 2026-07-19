@@ -45,19 +45,31 @@ export class TechniciansController {
   }
 
   @Patch(":id")
-  update(
+  async update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateTechnicianDto,
   ) {
-    return this.technicians.update(id, dto);
+    const technician = await this.technicians.update(id, dto);
+    // A rename cannot invalidate an assignment; a shift or availability
+    // change can, so only those two re-open the routing question.
+    const affectsRouting =
+      dto.workingHours !== undefined ||
+      dto.available !== undefined ||
+      dto.maxWorkload !== undefined;
+    const reassignedRequestIds = affectsRouting
+      ? await this.routing.revalidateFor(id)
+      : [];
+    return { technician, reassignedRequestIds };
   }
 
   @Put(":id/skills")
-  setSkills(
+  async setSkills(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: SetSkillsDto,
   ) {
-    return this.technicians.setSkills(id, dto.skills);
+    const technician = await this.technicians.setSkills(id, dto.skills);
+    const reassignedRequestIds = await this.routing.revalidateFor(id);
+    return { technician, reassignedRequestIds };
   }
 
   @Patch(":id/availability")
@@ -69,8 +81,10 @@ export class TechniciansController {
       id,
       dto.available,
     );
+    // Going away sheds their work; coming back adds capacity, which can pick
+    // up anything queued or previously unroutable.
     const reassignedRequestIds = dto.available
-      ? []
+      ? await this.routing.revalidateFor(id)
       : await this.routing.reassignFor(id);
     return { technician, reassignedRequestIds };
   }

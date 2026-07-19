@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const STATUS_COLOR: Record<RequestStatus, string> = {
   ASSIGNED: "var(--chart-2)",
   UNASSIGNED: "var(--chart-5)",
+  QUEUED: "var(--chart-1)",
   PENDING: "var(--chart-3)",
   COMPLETED: "var(--chart-4)",
 };
@@ -35,6 +36,16 @@ const tooltipStyle = {
   color: "var(--popover-foreground)",
   fontSize: 12,
   boxShadow: "0 6px 16px rgb(17 24 39 / 0.10)",
+};
+
+const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
+
+const EMPTY_STATUS_COUNTS: Record<RequestStatus, number> = {
+  PENDING: 0,
+  ASSIGNED: 0,
+  UNASSIGNED: 0,
+  QUEUED: 0,
+  COMPLETED: 0,
 };
 
 export function Dashboard({
@@ -50,16 +61,29 @@ export function Dashboard({
 
   const r = requests.data ?? [];
   const techs = technicians.data ?? [];
-  const loading = requests.isLoading || technicians.isLoading;
 
-  const counts = {
-    assigned: r.filter((x) => x.status === "ASSIGNED").length,
-    unassigned: r.filter((x) => x.status === "UNASSIGNED").length,
-    pending: r.filter((x) => x.status === "PENDING").length,
-    completed: r.filter((x) => x.status === "COMPLETED").length,
-  };
+  if (requests.isLoading || technicians.isLoading) {
+    return (
+      <div className="space-y-5">
+        <Skeleton className="h-28" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Skeleton className="h-80" />
+          <Skeleton className="h-80" />
+        </div>
+      </div>
+    );
+  }
+
+  // One pass over the requests; both the stat tiles and the pie chart read
+  // their numbers back out of this.
+  const counts = r.reduce(
+    (acc, x) => {
+      acc[x.status] += 1;
+      return acc;
+    },
+    { ...EMPTY_STATUS_COUNTS },
+  );
   const availableTechs = techs.filter((t) => t.available).length;
-  const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
 
   const tiles: StatTile[] = [
     {
@@ -69,20 +93,20 @@ export function Dashboard({
     },
     {
       label: "Assigned",
-      value: counts.assigned,
+      value: counts.ASSIGNED,
       sublabel: "Successfully routed",
       delta: {
-        text: `${pct(counts.assigned, r.length)}%`,
+        text: `${pct(counts.ASSIGNED, r.length)}%`,
         tone: "success",
         dir: "up",
       },
     },
     {
       label: "Unassigned",
-      value: counts.unassigned,
+      value: counts.UNASSIGNED,
       sublabel: "Awaiting a match",
       delta: {
-        text: `${pct(counts.unassigned, r.length)}%`,
+        text: `${pct(counts.UNASSIGNED, r.length)}%`,
         tone: "destructive",
         dir: "down",
       },
@@ -99,15 +123,11 @@ export function Dashboard({
     },
   ];
 
-  const statusTotal = counts.assigned + counts.unassigned + counts.pending + counts.completed;
   const statusData = (Object.keys(STATUS_COLOR) as RequestStatus[])
-    .map((status) => ({
-      status,
-      value: r.filter((x) => x.status === status).length,
-    }))
+    .map((status) => ({ status, value: counts[status] }))
     .filter((d) => d.value > 0);
 
-  const workloadData = [...techs]
+  const workloadData = techs
     .filter((t) => t.workload > 0)
     .sort((a, b) => b.workload - a.workload)
     .slice(0, 8)
@@ -115,18 +135,6 @@ export function Dashboard({
   const workloadChartHeight = Math.max(140, workloadData.length * 40 + 24);
 
   const recent = [...r].sort((a, b) => b.id - a.id).slice(0, 6);
-
-  if (loading) {
-    return (
-      <div className="space-y-5">
-        <Skeleton className="h-28" />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -178,7 +186,7 @@ export function Dashboard({
                         </span>
                       </span>
                       <span className="font-semibold tabular-nums">
-                        {pct(d.value, statusTotal)}%
+                        {pct(d.value, r.length)}%
                       </span>
                     </div>
                   ))}

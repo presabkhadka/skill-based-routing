@@ -13,7 +13,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type Priority = "HIGH" | "MEDIUM" | "LOW";
-export type RequestStatus = "PENDING" | "ASSIGNED" | "UNASSIGNED" | "COMPLETED";
+/** QUEUED = qualified technicians exist but all are full; auto-assigns later. */
+export type RequestStatus =
+  | "PENDING"
+  | "ASSIGNED"
+  | "UNASSIGNED"
+  | "QUEUED"
+  | "COMPLETED";
 
 export interface WorkingWindow {
   day: number;
@@ -26,6 +32,7 @@ export interface Technician {
   name: string;
   available: boolean;
   workload: number;
+  maxWorkload: number;
   skills: Record<string, number>;
   workingHours: WorkingWindow[];
 }
@@ -34,7 +41,8 @@ export type RejectReason =
   | "MISSING_SKILL"
   | "LEVEL_TOO_LOW"
   | "UNAVAILABLE"
-  | "OUTSIDE_HOURS";
+  | "OUTSIDE_HOURS"
+  | "AT_CAPACITY";
 
 export interface Evaluation {
   technicianId: number;
@@ -61,30 +69,56 @@ export interface ServiceRequestDetail extends ServiceRequestSummary {
   evaluations: Evaluation[];
 }
 
+export interface Skill {
+  id: number;
+  name: string;
+}
+
+export interface TechnicianSkillInput {
+  skill: string;
+  level: number;
+}
+
+/**
+ * Any mutation that can shift routing reports which requests actually moved,
+ * so the console can tell the dispatcher rather than silently reshuffling.
+ */
+export interface TechnicianMutationResult {
+  technician: Technician;
+  reassignedRequestIds: number[];
+}
+
 export const api = {
-  skills: () => req<{ id: number; name: string }[]>("/skills"),
-  offeredSkills: () =>
-    req<{ id: number; name: string }[]>("/skills/offered"),
+  skills: () => req<Skill[]>("/skills"),
+  offeredSkills: () => req<Skill[]>("/skills/offered"),
 
   technicians: () => req<Technician[]>("/technicians"),
   createTechnician: (body: {
     name: string;
     available?: boolean;
-    skills: { skill: string; level: number }[];
+    maxWorkload?: number;
+    skills: TechnicianSkillInput[];
     workingHours?: WorkingWindow[];
   }) => req<Technician>("/technicians", { method: "POST", body: JSON.stringify(body) }),
-  setWorkingHours: (id: number, workingHours: WorkingWindow[]) =>
-    req<Technician>(`/technicians/${id}`, {
+  updateTechnician: (
+    id: number,
+    body: {
+      name?: string;
+      maxWorkload?: number;
+      workingHours?: WorkingWindow[];
+    },
+  ) =>
+    req<TechnicianMutationResult>(`/technicians/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ workingHours }),
+      body: JSON.stringify(body),
     }),
   setAvailability: (id: number, available: boolean) =>
-    req<{ technician: Technician; reassignedRequestIds: number[] }>(
-      `/technicians/${id}/availability`,
-      { method: "PATCH", body: JSON.stringify({ available }) },
-    ),
-  setSkills: (id: number, skills: { skill: string; level: number }[]) =>
-    req<Technician>(`/technicians/${id}/skills`, {
+    req<TechnicianMutationResult>(`/technicians/${id}/availability`, {
+      method: "PATCH",
+      body: JSON.stringify({ available }),
+    }),
+  setSkills: (id: number, skills: TechnicianSkillInput[]) =>
+    req<TechnicianMutationResult>(`/technicians/${id}/skills`, {
       method: "PUT",
       body: JSON.stringify({ skills }),
     }),
@@ -96,9 +130,10 @@ export const api = {
       method: "POST",
     }),
   completeRequest: (id: number) =>
-    req<ServiceRequestDetail>(`/service-requests/${id}/complete`, {
-      method: "PATCH",
-    }),
+    req<ServiceRequestDetail & { autoAssignedRequestIds: number[] }>(
+      `/service-requests/${id}/complete`,
+      { method: "PATCH" },
+    ),
   createRequest: (body: {
     customer: string;
     priority?: Priority;

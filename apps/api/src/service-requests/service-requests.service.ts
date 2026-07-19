@@ -6,11 +6,28 @@ import {
 import type {
   CreateServiceRequestDto,
   Priority,
+  RequestStatus,
   RequiredSkillsMap,
 } from "@skill-routing/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { SkillsService } from "../skills/skills.service";
 import { RoutingService } from "../routing/routing.service";
+
+/**
+ * The columns and relations `toSummary` reads. Both `findAll` and `findOne`
+ * select a superset of this, so each stays structurally assignable.
+ */
+type ServiceRequestRow = {
+  id: number;
+  customer: string;
+  priority: Priority;
+  status: RequestStatus;
+  scheduledDay: number | null;
+  scheduledTime: string | null;
+  createdAt: Date;
+  assignedTechnician: { id: number; name: string } | null;
+  requiredSkills: { minLevel: number; skill: { name: string } }[];
+};
 
 @Injectable()
 export class ServiceRequestsService {
@@ -125,17 +142,20 @@ export class ServiceRequestsService {
       where: { id },
       data: { status: "COMPLETED" },
     });
-    return this.findOne(id);
+    // Completing frees a slot on the assignee, which is the most common way
+    // queued work becomes assignable — hand it out straight away.
+    const autoAssignedRequestIds = await this.routing.sweepQueued();
+    return { ...(await this.findOne(id)), autoAssignedRequestIds };
   }
 
-  private toSummary(r: any) {
+  private toSummary(r: ServiceRequestRow) {
     return {
       id: r.id,
       customer: r.customer,
       priority: r.priority,
       status: r.status,
       requiredSkills: Object.fromEntries(
-        r.requiredSkills.map((rs: any) => [rs.skill.name, rs.minLevel]),
+        r.requiredSkills.map((rs) => [rs.skill.name, rs.minLevel]),
       ) as RequiredSkillsMap,
       assignedTechnician: r.assignedTechnician ?? null,
       scheduledDay: r.scheduledDay ?? null,

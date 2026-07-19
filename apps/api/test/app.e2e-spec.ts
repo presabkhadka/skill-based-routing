@@ -43,6 +43,7 @@ describe("Skill-Based Routing (e2e)", () => {
     opts: {
       available?: boolean;
       workingHours?: { day: number; start: string; end: string }[];
+      maxWorkload?: number;
     } = {},
   ): Promise<number> {
     const res = await http
@@ -52,6 +53,9 @@ describe("Skill-Based Routing (e2e)", () => {
         skills,
         available: opts.available ?? true,
         workingHours: opts.workingHours ?? [],
+        ...(opts.maxWorkload !== undefined
+          ? { maxWorkload: opts.maxWorkload }
+          : {}),
       })
       .expect(201);
     return res.body.id;
@@ -244,10 +248,17 @@ describe("Skill-Based Routing (e2e)", () => {
       { skill: "HVAC", level: 5 },
       { skill: "Electrical", level: 5 },
     ]);
-    const sarah = await createTech("Sarah", [
-      { skill: "HVAC", level: 5 },
-      { skill: "Electrical", level: 5 },
-    ]);
+    // Sarah is heavily loaded so John wins on workload, but her cap is raised
+    // well clear of that load: this test is about reassignment, and capacity
+    // must not be the thing that decides it.
+    const sarah = await createTech(
+      "Sarah",
+      [
+        { skill: "HVAC", level: 5 },
+        { skill: "Electrical", level: 5 },
+      ],
+      { maxWorkload: 20 },
+    );
     await setWorkload(sarah, 5);
 
     const created = await http
@@ -390,5 +401,190 @@ describe("Skill-Based Routing (e2e)", () => {
       .post("/service-requests")
       .send({ customer: "Empty", requiredSkills: {} })
       .expect(400);
+  });
+
+  describe("capacity (max workload) and the QUEUED state", () => {
+    const soleTech = (maxWorkload: number) =>
+      createTech(
+        "Only",
+        [
+          { skill: "HVAC", level: 5 },
+          { skill: "Electrical", level: 5 },
+        ],
+        { maxWorkload },
+      );
+
+    it("queues a request when every qualified technician is at capacity", async () => {
+      await soleTech(1);
+      await http
+        .post("/service-requests")
+        .send({ customer: "First", requiredSkills: HVAC_ELEC })
+        .expect(201);
+
+      const second = await http
+        .post("/service-requests")
+        .send({ customer: "Second", requiredSkills: HVAC_ELEC })
+        .expect(201);
+
+      expect(second.body.status).toBe("QUEUED");
+      expect(second.body.assignedTechnician).toBeNull();
+      expect(second.body.evaluations[0].rejectReason).toBe("AT_CAPACITY");
+    });
+
+    it("keeps UNASSIGNED distinct from QUEUED when nobody qualifies at all", async () => {
+      await soleTech(1);
+      const res = await http
+        .post("/service-requests")
+        .send({ customer: "Impossible", requiredSkills: { Refrigeration: 4 } })
+        .expect(201);
+
+      // Nobody holds the skill, so this is not a capacity problem and must not
+      // be queued — it needs a human, not patience.
+      expect(res.body.status).toBe("UNASSIGNED");
+    });
+
+    it("auto-assigns queued work as soon as a completion frees capacity", async () => {
+      await soleTech(1);
+      const first = await http
+        .post("/service-requests")
+        .send({ customer: "First", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      const queued = await http
+        .post("/service-requests")
+        .send({ customer: "Queued", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      expect(queued.body.status).toBe("QUEUED");
+
+      const completed = await http
+        .patch(`/service-requests/${first.body.id}/complete`)
+        .expect(200);
+      expect(completed.body.autoAssignedRequestIds).toContain(queued.body.id);
+
+      const after = await http
+        .get(`/service-requests/${queued.body.id}`)
+        .expect(200);
+      expect(after.body.status).toBe("ASSIGNED");
+    });
+
+    it("picks up queued work when a cap is raised", async () => {
+      const tech = await soleTech(1);
+      await http
+        .post("/service-requests")
+        .send({ customer: "First", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      const queued = await http
+        .post("/service-requests")
+        .send({ customer: "Queued", requiredSkills: HVAC_ELEC })
+        .expect(201);
+
+      const raised = await http
+        .patch(`/technicians/${tech}`)
+        .send({ maxWorkload: 5 })
+        .expect(200);
+      expect(raised.body.reassignedRequestIds).toContain(queued.body.id);
+    });
+  });
+
+  describe("updating a technician re-validates only what it must", () => {
+    it("unblocks previously unroutable work when a skill is learned", async () => {
+      const tech = await createTech("Learner", [{ skill: "HVAC", level: 5 }]);
+      const stuck = await http
+        .post("/service-requests")
+        .send({ customer: "NeedsElec", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      expect(stuck.body.status).toBe("UNASSIGNED");
+
+      const updated = await http
+        .put(`/technicians/${tech}/skills`)
+        .send({
+          skills: [
+            { skill: "HVAC", level: 5 },
+            { skill: "Electrical", level: 5 },
+          ],
+        })
+        .expect(200);
+      expect(updated.body.reassignedRequestIds).toContain(stuck.body.id);
+
+      const after = await http.get(`/service-requests/${stuck.body.id}`);
+      expect(after.body.status).toBe("ASSIGNED");
+    });
+
+    it("re-routes only the assignments a dropped skill invalidated", async () => {
+      const john = await createTech("John", [
+        { skill: "HVAC", level: 5 },
+        { skill: "Electrical", level: 5 },
+      ]);
+      await createTech("Backup", [{ skill: "HVAC", level: 5 }]);
+
+      const hvacOnly = await http
+        .post("/service-requests")
+        .send({ customer: "HvacOnly", requiredSkills: { HVAC: 4 } })
+        .expect(201);
+      const needsBoth = await http
+        .post("/service-requests")
+        .send({ customer: "Both", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      expect(needsBoth.body.assignedTechnician.id).toBe(john);
+
+      // Drop Electrical: the HVAC-only job is still perfectly valid for John
+      // and must not be churned; only the Electrical job may move.
+      const updated = await http
+        .put(`/technicians/${john}/skills`)
+        .send({ skills: [{ skill: "HVAC", level: 5 }] })
+        .expect(200);
+      expect(updated.body.reassignedRequestIds).toContain(needsBoth.body.id);
+      expect(updated.body.reassignedRequestIds).not.toContain(hvacOnly.body.id);
+    });
+
+    it("does not touch routing when only the name changes", async () => {
+      const tech = await createTech("Before", [
+        { skill: "HVAC", level: 5 },
+        { skill: "Electrical", level: 5 },
+      ]);
+      await http
+        .post("/service-requests")
+        .send({ customer: "Held", requiredSkills: HVAC_ELEC })
+        .expect(201);
+
+      const renamed = await http
+        .patch(`/technicians/${tech}`)
+        .send({ name: "After" })
+        .expect(200);
+      expect(renamed.body.technician.name).toBe("After");
+      expect(renamed.body.reassignedRequestIds).toEqual([]);
+    });
+
+    it("keeps a full technician's own assignments when they are edited", async () => {
+      const tech = await createTech(
+        "Full",
+        [
+          { skill: "HVAC", level: 5 },
+          { skill: "Electrical", level: 5 },
+        ],
+        { maxWorkload: 1 },
+      );
+      const held = await http
+        .post("/service-requests")
+        .send({ customer: "Held", requiredSkills: HVAC_ELEC })
+        .expect(201);
+      expect(held.body.assignedTechnician.id).toBe(tech);
+
+      // The technician is at 1/1. Capacity gates *new* work, so editing them
+      // must not make them fail the request they are already holding.
+      const updated = await http
+        .put(`/technicians/${tech}/skills`)
+        .send({
+          skills: [
+            { skill: "HVAC", level: 5 },
+            { skill: "Electrical", level: 5 },
+            { skill: "Plumbing", level: 2 },
+          ],
+        })
+        .expect(200);
+      expect(updated.body.reassignedRequestIds).toEqual([]);
+
+      const after = await http.get(`/service-requests/${held.body.id}`);
+      expect(after.body.assignedTechnician.id).toBe(tech);
+    });
   });
 });

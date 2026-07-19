@@ -3,7 +3,8 @@ import type { WorkingWindow } from "@/api";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-const DAYS = [
+/** Week starts Monday and wraps Sunday to the end — display order, not index order. */
+export const DAYS = [
   { i: 1, label: "Mon" },
   { i: 2, label: "Tue" },
   { i: 3, label: "Wed" },
@@ -13,46 +14,60 @@ const DAYS = [
   { i: 0, label: "Sun" },
 ];
 
-export const WEEKDAY_CHIPS = DAYS;
 export function dayLabel(i: number): string {
   return DAYS.find((d) => d.i === i)?.label ?? "";
 }
-const SHORT: Record<number, string> = {
-  0: "Sun",
-  1: "Mon",
-  2: "Tue",
-  3: "Wed",
-  4: "Thu",
-  5: "Fri",
-  6: "Sat",
-};
 
-export function summarizeHours(windows: WorkingWindow[]): string {
-  if (!windows || windows.length === 0) return "Always";
-  const start = windows[0].start;
-  const end = windows[0].end;
-  const uniform = windows.every((w) => w.start === start && w.end === end);
-  const daysInOrder = DAYS.filter((d) => windows.some((w) => w.day === d.i)).map(
-    (d) => d.i,
+/** A single weekday toggle. Shared by the hours editor and the scheduler. */
+export function DayChip({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-8 w-11 rounded-md border text-xs font-medium transition-colors",
+        selected
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:bg-muted",
+      )}
+    >
+      {label}
+    </button>
   );
-  const dayLabel = contiguousLabel(daysInOrder);
-  return uniform
-    ? `${dayLabel} ${start}–${end}`
-    : `${windows.length} shifts`;
 }
 
+export function summarizeHours(windows: WorkingWindow[]): string {
+  if (windows.length === 0) return "Always";
+  const { start, end } = windows[0];
+  const uniform = windows.every((w) => w.start === start && w.end === end);
+  if (!uniform) return `${windows.length} shifts`;
+
+  const covered = DAYS.filter((d) => windows.some((w) => w.day === d.i)).map(
+    (d) => d.i,
+  );
+  return `${contiguousLabel(covered)} ${start}–${end}`;
+}
+
+/** "Mon–Fri" when the days run consecutively in display order, else "Mon, Wed, Fri". */
 function contiguousLabel(dayIdx: number[]): string {
-  const order = DAYS.map((d) => d.i);
   const positions = dayIdx
-    .map((i) => order.indexOf(i))
+    .map((i) => DAYS.findIndex((d) => d.i === i))
     .sort((a, b) => a - b);
   const contiguous =
     positions.length > 1 &&
     positions.every((p, k) => k === 0 || p === positions[k - 1] + 1);
   if (contiguous) {
-    return `${SHORT[order[positions[0]]]}–${SHORT[order[positions[positions.length - 1]]]}`;
+    return `${DAYS[positions[0]].label}–${DAYS[positions[positions.length - 1]].label}`;
   }
-  return positions.map((p) => SHORT[order[p]]).join(", ");
+  return positions.map((p) => DAYS[p].label).join(", ");
 }
 
 export function WorkingHoursEditor({
@@ -85,19 +100,12 @@ export function WorkingHoursEditor({
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-1.5">
         {DAYS.map((d) => (
-          <button
+          <DayChip
             key={d.i}
-            type="button"
+            label={d.label}
+            selected={days.has(d.i)}
             onClick={() => toggle(d.i)}
-            className={cn(
-              "h-8 w-11 rounded-md border text-xs font-medium transition-colors",
-              days.has(d.i)
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {d.label}
-          </button>
+          />
         ))}
       </div>
       <div className="flex items-center gap-2">

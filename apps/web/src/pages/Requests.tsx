@@ -2,16 +2,15 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, type RejectReason } from "@/api";
-
-const REJECT_LABEL: Record<RejectReason, string> = {
-  MISSING_SKILL: "missing skill",
-  LEVEL_TOO_LOW: "level too low",
-  UNAVAILABLE: "unavailable",
-  OUTSIDE_HOURS: "off shift",
-};
+import { api } from "@/api";
 import { dayLabel } from "@/components/working-hours";
-import { PriorityBadge, SkillChips, StatusBadge } from "@/components/badges";
+import { toastAutoAssigned, toastRoutingOutcome } from "@/lib/routing-toast";
+import {
+  PriorityBadge,
+  REJECT_LABEL,
+  SkillChips,
+  StatusBadge,
+} from "@/components/badges";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -134,20 +133,10 @@ function RequestDetail({ id, onBack }: { id: number; onBack: () => void }) {
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["request", id] });
       qc.invalidateQueries({ queryKey: ["requests"] });
-      if (result.assignedTechnician) {
-        setBanner({
-          kind: "success",
-          text: `Routing re-run — assigned to ${result.assignedTechnician.name}.`,
-        });
-      } else {
-        setBanner({
-          kind: "info",
-          text: "Routing re-run — still unassigned. No available technician has all required skills.",
-        });
-      }
+      toastRoutingOutcome(result);
     },
     onError: (err) => {
-      setBanner({ kind: "error", text: (err as Error).message });
+      setBanner({ kind: "error", text: err.message });
     },
   });
 
@@ -161,9 +150,11 @@ function RequestDetail({ id, onBack }: { id: number; onBack: () => void }) {
         kind: "success",
         text: `Request completed — ${result.assignedTechnician?.name ?? "the technician"}'s workload is freed up for future routing.`,
       });
+      // Completing frees a slot, so queued work may have just been picked up.
+      toastAutoAssigned(result.autoAssignedRequestIds);
     },
     onError: (err) => {
-      setBanner({ kind: "error", text: (err as Error).message });
+      setBanner({ kind: "error", text: err.message });
     },
   });
 

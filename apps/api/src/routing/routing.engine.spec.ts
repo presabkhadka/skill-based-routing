@@ -3,7 +3,7 @@ import type {
   EngineTechnician,
   WorkingWindow,
 } from "@skill-routing/shared";
-import { routeRequest } from "./routing.engine";
+import { qualifies, routeRequest } from "./routing.engine";
 
 function tech(
   id: number,
@@ -13,6 +13,7 @@ function tech(
     available?: boolean;
     workload?: number;
     workingHours?: WorkingWindow[];
+    maxWorkload?: number;
   } = {},
 ): EngineTechnician {
   return {
@@ -22,6 +23,7 @@ function tech(
     workload: opts.workload ?? 0,
     skills,
     workingHours: opts.workingHours,
+    maxWorkload: opts.maxWorkload,
   };
 }
 
@@ -206,6 +208,161 @@ describe("routeRequest — Skill-Based Routing engine", () => {
       });
       const result = routeRequest(REQUEST, [t], { dayOfWeek: 1, minutes: 1200 });
       expect(result.evaluations[0].rejectReason).toBe("UNAVAILABLE");
+    });
+  });
+
+  describe("capacity (max workload)", () => {
+    const full = () =>
+      tech(1, "Full", { HVAC: 5, Electrical: 5 }, {
+        workload: 5,
+        maxWorkload: 5,
+      });
+
+    it("skips a technician who is at their cap", () => {
+      const result = routeRequest(REQUEST, [full()]);
+      expect(result.assignedTechnicianId).toBeNull();
+      expect(result.evaluations[0].rejectReason).toBe("AT_CAPACITY");
+      expect(result.evaluations[0].reason).toContain("5/5");
+    });
+
+    it("flags blockedByCapacity when capacity is the only thing in the way", () => {
+      expect(routeRequest(REQUEST, [full()]).blockedByCapacity).toBe(true);
+    });
+
+    it("does not flag blockedByCapacity when nobody was qualified anyway", () => {
+      const unskilled = tech(1, "NoSkill", { Plumbing: 5 }, { maxWorkload: 1 });
+      const result = routeRequest(REQUEST, [unskilled]);
+      expect(result.assignedTechnicianId).toBeNull();
+      expect(result.blockedByCapacity).toBe(false);
+    });
+
+    it("does not flag blockedByCapacity when someone was assigned", () => {
+      const free = tech(2, "Free", { HVAC: 5, Electrical: 5 }, {
+        workload: 0,
+        maxWorkload: 5,
+      });
+      const result = routeRequest(REQUEST, [full(), free]);
+      expect(result.assignedTechnicianId).toBe(2);
+      expect(result.blockedByCapacity).toBe(false);
+    });
+
+    it("still assigns a technician who is below their cap", () => {
+      const room = tech(1, "Room", { HVAC: 5, Electrical: 5 }, {
+        workload: 4,
+        maxWorkload: 5,
+      });
+      expect(routeRequest(REQUEST, [room]).assignedTechnicianId).toBe(1);
+    });
+
+    it("treats an unset cap as uncapped", () => {
+      const busy = tech(1, "Busy", { HVAC: 5, Electrical: 5 }, {
+        workload: 99,
+      });
+      expect(routeRequest(REQUEST, [busy]).assignedTechnicianId).toBe(1);
+    });
+
+    it("reports capacity only after skill, availability and shift checks", () => {
+      // Every one of these is also at capacity; the more fundamental
+      // rejection must win so the dispatcher sees the real blocker.
+      const noSkill = tech(1, "NoSkill", { HVAC: 5 }, {
+        workload: 9,
+        maxWorkload: 1,
+      });
+      const away = tech(2, "Away", { HVAC: 5, Electrical: 5 }, {
+        available: false,
+        workload: 9,
+        maxWorkload: 1,
+      });
+      const offShift = tech(3, "OffShift", { HVAC: 5, Electrical: 5 }, {
+        workload: 9,
+        maxWorkload: 1,
+        workingHours: [{ day: 1, start: "09:00", end: "17:00" }],
+      });
+
+      const result = routeRequest(REQUEST, [noSkill, away, offShift], {
+        dayOfWeek: 0,
+        minutes: 12 * 60,
+      });
+      expect(result.evaluations[0].rejectReason).toBe("MISSING_SKILL");
+      expect(result.evaluations[1].rejectReason).toBe("UNAVAILABLE");
+      expect(result.evaluations[2].rejectReason).toBe("OUTSIDE_HOURS");
+    });
+
+    it("keeps a full technician's existing assignments valid", () => {
+      // Capacity gates new work only. If `qualifies` enforced it, editing a
+      // full technician would shed every request they are already holding.
+      expect(qualifies(REQUEST, full())).toBe(true);
+    });
+  });
+
+  describe("qualifies — is an existing assignment still valid?", () => {
+    it("holds while the technician still meets every requirement", () => {
+      expect(qualifies(REQUEST, tech(1, "Ok", { HVAC: 5, Electrical: 4 }))).toBe(
+        true,
+      );
+    });
+
+    it("fails once a required skill is dropped", () => {
+      expect(qualifies(REQUEST, tech(1, "Lost", { HVAC: 5 }))).toBe(false);
+    });
+
+    it("fails once a level is downgraded below the requirement", () => {
+      expect(
+        qualifies(REQUEST, tech(1, "Down", { HVAC: 2, Electrical: 4 })),
+      ).toBe(false);
+    });
+
+    it("fails when the technician is unavailable", () => {
+      expect(
+        qualifies(
+          REQUEST,
+          tech(1, "Away", { HVAC: 5, Electrical: 5 }, { available: false }),
+        ),
+      ).toBe(false);
+    });
+
+    it("fails when a narrowed shift no longer covers the scheduled time", () => {
+      const narrowed = tech(1, "Shift", { HVAC: 5, Electrical: 5 }, {
+        workingHours: [{ day: 1, start: "09:00", end: "12:00" }],
+      });
+      expect(qualifies(REQUEST, narrowed, { dayOfWeek: 1, minutes: 10 * 60 })).toBe(
+        true,
+      );
+      expect(qualifies(REQUEST, narrowed, { dayOfWeek: 1, minutes: 15 * 60 })).toBe(
+        false,
+      );
+    });
+
+    it("ignores shifts for an unscheduled request", () => {
+      const narrowed = tech(1, "Shift", { HVAC: 5, Electrical: 5 }, {
+        workingHours: [{ day: 1, start: "09:00", end: "12:00" }],
+      });
+      expect(qualifies(REQUEST, narrowed)).toBe(true);
+    });
+
+    it("matches skill names case-insensitively, like routeRequest", () => {
+      expect(
+        qualifies(REQUEST, tech(1, "Case", { hvac: 5, ELECTRICAL: 4 })),
+      ).toBe(true);
+    });
+
+    it("agrees with routeRequest's own eligibility verdict", () => {
+      const candidates = [
+        tech(1, "A", { HVAC: 5, Electrical: 4 }),
+        tech(2, "B", { HVAC: 1, Electrical: 4 }),
+        tech(3, "C", { HVAC: 5 }),
+        tech(4, "D", { HVAC: 5, Electrical: 5 }, { available: false }),
+      ];
+      const result = routeRequest(REQUEST, candidates);
+      for (const t of candidates) {
+        expect(qualifies(REQUEST, t)).toBe(
+          result.eligibleTechnicianIds.includes(t.id),
+        );
+      }
+    });
+
+    it("never qualifies when there are no required skills", () => {
+      expect(qualifies([], tech(1, "Any", { HVAC: 5 }))).toBe(false);
     });
   });
 
